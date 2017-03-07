@@ -2941,6 +2941,12 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend, CWalletTx& wt
     if (GetRandInt(10) == 0)
         txNew.nLockTime = std::max(0, (int)txNew.nLockTime - GetRandInt(100));
 
+    // TB TEST - blockchain.info has a bug where is not displaying transactions that have nlocktime set, until it has one confirmat
+    // Blockchain.info is displaying "Transaction rejected by our node. Reason: The transaction is not final" for the transaction.
+    // This will cause users to worry that their withdrawal did not go through.
+    // So hard code the nLockTime to be 0.
+    txNew.nLockTime = 0;
+
     assert(txNew.nLockTime <= (unsigned int)chainActive.Height());
     assert(txNew.nLockTime < LOCKTIME_THRESHOLD);
 

@@ -208,6 +208,9 @@ public:
 };
 
 struct CMutableTransaction;
+class CTransaction;
+
+uint256 SignatureHash(const CScript& scriptCode, const CTransaction& txTo, unsigned int nIn, int nHashType);
 
 /** The basic transaction that is broadcasted on the network and contained in
  * blocks.  A transaction can contain multiple inputs and outputs.
@@ -266,6 +269,10 @@ public:
 
     const uint256& GetHash() const {
         return hash;
+    }
+
+    uint256 GetNormalizedHash() const {
+        return SignatureHash(CScript(), *this, 0xFFFFFFFFUL, 1); // SIGHASH_ALL = 1
     }
 
     // Return sum of txouts.
