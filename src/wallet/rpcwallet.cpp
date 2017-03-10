@@ -1652,7 +1652,7 @@ UniValue listtransactions2(const UniValue& params, bool fHelp)
             "    \"address\":\"bitcoinaddress\",    (string) The bitcoin address of the transaction. Not present for \n"
             "                                                move transactions (category = move).\n"
             "    \"category\":\"send|receive|move\", (string) The transaction category. 'move' is a local (off blockchain)\n"
-            "                                                transaction between accounts, and not associated with an address,\n"
+           "                                                transaction between accounts, and not associated with an address,\n"
             "                                                transaction id or block. 'send' and 'receive' transactions are \n"
             "                                                associated with an address, transaction id and block details\n"
             "    \"amount\": x.xxx,          (numeric) The amount in btc. This is negative for the 'send' category, and for the\n"
@@ -1680,16 +1680,14 @@ UniValue listtransactions2(const UniValue& params, bool fHelp)
 
             "\nExamples:\n"
             "\nList the most recent 10 transactions in the systems\n"
-            + HelpExampleCli("listtransactions2", "") +
+            + HelpExampleCli("listtransactions", "") +
             "\nList the most recent 10 transactions for the tabby account\n"
-            + HelpExampleCli("listtransactions2", "\"tabby\"") +
+            + HelpExampleCli("listtransactions", "\"tabby\"") +
             "\nList transactions 100 to 120 from the tabby account\n"
-            + HelpExampleCli("listtransactions2", "\"tabby\" 20 100") +
+            + HelpExampleCli("listtransactions", "\"tabby\" 20 100") +
             "\nAs a json rpc call\n"
-            + HelpExampleRpc("listtransactions2", "\"tabby\", 20, 100")
+            + HelpExampleRpc("listtransactions", "\"tabby\", 20, 100")
         );
-
-    LOCK2(cs_main, pwalletMain->cs_wallet);
 
     string strAccount = "*";
     if (params.size() > 0)
@@ -1697,9 +1695,9 @@ UniValue listtransactions2(const UniValue& params, bool fHelp)
     int nCount = 10;
     if (params.size() > 1)
         nCount = params[1].get_int();
-    int nFrom = 0;
+    int nStart = 0;
     if (params.size() > 2)
-        nFrom = params[2].get_int();
+        nStart = params[2].get_int();
     isminefilter filter = ISMINE_SPENDABLE;
     if(params.size() > 3)
         if(params[3].get_bool())
@@ -1707,48 +1705,62 @@ UniValue listtransactions2(const UniValue& params, bool fHelp)
 
     if (nCount < 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative count");
-    if (nFrom < 0)
+    if (nStart < 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative start");
 
+    // TBFIX
+    // Array ret;
     UniValue ret(UniValue::VARR);
 
-    std::list<CAccountingEntry> acentries;
+    // TBFIX
+    // CWallet::TxItems txOrdered = pwalletMain->OrderedTxItems(acentries, strAccount);
+    // std::list<CAccountingEntry> acentries;
     const CWallet::TxItems & txOrdered = pwalletMain->wtxOrdered;
 
     // iterate backwards until we have nCount items to return:
-    for (CWallet::TxItems::const_reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it)
-    {
-        CWalletTx *const pwtx = (*it).second.first;
-        if (pwtx != 0)
-            ListTransactions(*pwtx, strAccount, 0, true, ret, filter);
-        CAccountingEntry *const pacentry = (*it).second.second;
-        if (pacentry != 0)
-            AcentryToJSON(*pacentry, strAccount, ret);
+    // TBFIX
+    // CWallet::TxItems::iterator it = txOrdered.begin();
+    CWallet::TxItems::const_iterator it = txOrdered.begin();
+    // TBFIX
+    // if(txOrdered.size() > nStart) {
+    if( (int)txOrdered.size() > nStart) {
+        std::advance(it, nStart);
+        for (; it != txOrdered.end(); ++it)
+        {
+            CWalletTx *const pwtx = (*it).second.first;
+            if (pwtx != 0)
+                ListTransactions(*pwtx, strAccount, 0, true, ret, filter);
+            CAccountingEntry *const pacentry = (*it).second.second;
+            if (pacentry != 0)
+                AcentryToJSON(*pacentry, strAccount, ret);
 
-        if ((int)ret.size() >= (nCount+nFrom)) break;
+            if ((int)ret.size() >= nCount) break;
+        }
     }
-    // ret is newest to oldest
 
-    if (nFrom > (int)ret.size())
-        nFrom = ret.size();
-    if ((nFrom + nCount) > (int)ret.size())
-        nCount = ret.size() - nFrom;
-
+    // TBFIX
+    // now we make sure to return only the last nCount items (sends-to-self might give us an extra)
+    /*
+    if ((int)ret.size() > nCount) {
+        // Array::iterator last = ret.begin();
+        int foo = ret.begin();
+        std::advance(last, nCount);
+        ret.erase(last, ret.end());
+    }
+    */
     vector<UniValue> arrTmp = ret.getValues();
-
-    vector<UniValue>::iterator first = arrTmp.begin();
-    std::advance(first, nFrom);
-    vector<UniValue>::iterator last = arrTmp.begin();
-    std::advance(last, nFrom+nCount);
-
-    if (last != arrTmp.end()) arrTmp.erase(last, arrTmp.end());
-    if (first != arrTmp.begin()) arrTmp.erase(arrTmp.begin(), first);
-
-    // std::reverse(arrTmp.begin(), arrTmp.end()); // Return oldest to newest
-
+    if ((int)ret.size() > nCount) {
+        vector<UniValue>::iterator last = arrTmp.begin();
+        std::advance(last, nCount);
+        arrTmp.erase(last, arrTmp.end());
+    }
     ret.clear();
     ret.setArray();
     ret.push_backV(arrTmp);
+
+
+
+
 
     return ret;
 }
