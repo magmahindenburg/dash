@@ -251,18 +251,23 @@ UniValue getrawtransaction(const JSONRPCRequest& request)
 UniValue getnormalizedtxid(const UniValue& params, bool fHelp)
 {
     if(fHelp || params.size() != 1)
-        throw runtime_error("getnormalizedtxid [serialized txn]\n");
+        throw JSONRPCError(RPC_TYPE_ERROR, "Wrong arguments");
 
     // parse hex string from parameter
     std::vector<unsigned char> txData(ParseHexV(params[0], "argument"));
     CDataStream ssData(txData, SER_NETWORK, PROTOCOL_VERSION);
-    CTransaction tx;
+    CMutableTransaction tx;
+//    CTransaction tx;
 
-    // deserialize binary data stream
-    try {
-        ssData >> tx;
-    } catch (std::exception &e) {
-        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX decode failed");
+    std::vector<CMutableTransaction> txVariants;
+    while (!ssData.empty()) {
+        try {
+            ssData >> tx;
+            txVariants.push_back(tx);
+        }
+        catch (const std::exception&) {
+            throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX decode failed");
+        }
     }
 
     uint256 hashNormalized = tx.GetNormalizedHash();

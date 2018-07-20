@@ -336,6 +336,10 @@ struct CMutableTransaction
      */
     uint256 GetHash() const;
 
+    uint256 GetNormalizedHash() const {
+        return SignatureHash(CScript(), *this, 0xFFFFFFFFUL, 1); // SIGHASH_ALL = 1
+    }
+
     std::string ToString() const;
 
     friend bool operator==(const CMutableTransaction& a, const CMutableTransaction& b)

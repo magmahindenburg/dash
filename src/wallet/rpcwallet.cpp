@@ -74,7 +74,7 @@ void WalletTxToJSON(const CWalletTx& wtx, UniValue& entry)
     }
     uint256 hash = wtx.GetHash();
     entry.push_back(Pair("txid", hash.GetHex()));
-    entry.push_back(Pair("normtxid", wtx.GetNormalizedHash().GetHex()));
+    entry.push_back(Pair("normtxid", hash.GetHex()));
     UniValue conflicts(UniValue::VARR);
     BOOST_FOREACH(const uint256& conflict, wtx.GetConflicts())
         conflicts.push_back(conflict.GetHex());
@@ -1612,7 +1612,7 @@ UniValue listtransactions(const JSONRPCRequest& request)
 UniValue listtransactions2(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() > 4)
-        throw runtime_error(
+        throw std::runtime_error(
             "listtransactions2 ( \"account\" count from includeWatchonly)\n"
             "\nReturns up to 'count' most recent transactions skipping the first 'from' transactions for account 'account'.\n"
             "\nArguments:\n"
@@ -1666,7 +1666,7 @@ UniValue listtransactions2(const UniValue& params, bool fHelp)
             + HelpExampleRpc("listtransactions", "\"tabby\", 20, 100")
         );
 
-    string strAccount = "*";
+    std::string strAccount = "*";
     if (params.size() > 0)
         strAccount = params[0].get_str();
     int nCount = 10;
@@ -1725,9 +1725,9 @@ UniValue listtransactions2(const UniValue& params, bool fHelp)
         ret.erase(last, ret.end());
     }
     */
-    vector<UniValue> arrTmp = ret.getValues();
+    std::vector<UniValue> arrTmp = ret.getValues();
     if ((int)ret.size() > nCount) {
-        vector<UniValue>::iterator last = arrTmp.begin();
+        std::vector<UniValue>::iterator last = arrTmp.begin();
         std::advance(last, nCount);
         arrTmp.erase(last, arrTmp.end());
     }
