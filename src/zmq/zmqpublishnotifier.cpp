@@ -3,8 +3,9 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "chainparams.h"
+#include "streams.h"
 #include "zmqpublishnotifier.h"
-#include "main.h"
+#include "validation.h"
 #include "util.h"
 
 static std::multimap<std::string, CZMQAbstractPublishNotifier*> mapPublishNotifiers;
@@ -14,7 +15,7 @@ static const char *MSG_HASHTX     = "hashtx";
 static const char *MSG_HASHTXLOCK = "hashtxlock";
 static const char *MSG_RAWBLOCK   = "rawblock";
 static const char *MSG_RAWTX      = "rawtx";
-static const char *MSG_RAWTXLOCK = "rawtxlock";
+static const char *MSG_RAWTXLOCK  = "rawtxlock";
 
 // Internal function to send multipart message
 static int zmq_send_multipart(void *sock, const void* data, size_t size, ...)
