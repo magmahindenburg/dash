@@ -1609,9 +1609,12 @@ UniValue listtransactions(const JSONRPCRequest& request)
     return ret;
 }
 
-UniValue listtransactions2(const UniValue& params, bool fHelp)
+UniValue listtransactions2(const JSONRPCRequest& request)
 {
-    if (fHelp || params.size() > 4)
+    if (!EnsureWalletIsAvailable(request.fHelp))
+        return NullUniValue;
+
+    if (request.fHelp || request.params.size() > 4)
         throw std::runtime_error(
             "listtransactions2 ( \"account\" count from includeWatchonly)\n"
             "\nReturns up to 'count' most recent transactions skipping the first 'from' transactions for account 'account'.\n"
@@ -1667,23 +1670,24 @@ UniValue listtransactions2(const UniValue& params, bool fHelp)
         );
 
     std::string strAccount = "*";
-    if (params.size() > 0)
-        strAccount = params[0].get_str();
+    if (request.params.size() > 0)
+        strAccount = request.params[0].get_str();
     int nCount = 10;
-    if (params.size() > 1)
-        nCount = params[1].get_int();
-    int nStart = 0;
-    if (params.size() > 2)
-        nStart = params[2].get_int();
+    if (request.params.size() > 1)
+        nCount = request.params[1].get_int();
+    int nFrom = 0;
+    if (request.params.size() > 2)
+        nFrom = request.params[2].get_int();
     isminefilter filter = ISMINE_SPENDABLE;
-    if(params.size() > 3)
-        if(params[3].get_bool())
+    if(request.params.size() > 3)
+        if(request.params[3].get_bool())
             filter = filter | ISMINE_WATCH_ONLY;
 
     if (nCount < 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative count");
-    if (nStart < 0)
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative start");
+    if (nFrom < 0)
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative from");
+
 
     // TBFIX
     // Array ret;
@@ -1700,8 +1704,8 @@ UniValue listtransactions2(const UniValue& params, bool fHelp)
     CWallet::TxItems::const_iterator it = txOrdered.begin();
     // TBFIX
     // if(txOrdered.size() > nStart) {
-    if( (int)txOrdered.size() > nStart) {
-        std::advance(it, nStart);
+    if( (int)txOrdered.size() > nFrom) {
+        std::advance(it, nFrom);
         for (; it != txOrdered.end(); ++it)
         {
             CWalletTx *const pwtx = (*it).second.first;
@@ -3027,13 +3031,11 @@ static const CRPCCommand commands[] =
     { "wallet",             "walletpassphrasechange",   &walletpassphrasechange,   true,   {"oldpassphrase","newpassphrase"} },
     { "wallet",             "walletpassphrase",         &walletpassphrase,         true,   {"passphrase","timeout","mixingonly"} },
     { "wallet",             "removeprunedfunds",        &removeprunedfunds,        true,   {"txid"} },
-
     { "wallet",             "keepass",                  &keepass,                  true,   {} },
     { "wallet",             "instantsendtoaddress",     &instantsendtoaddress,     false,  {"address","amount","comment","comment_to","subtractfeefromamount"} },
     { "wallet",             "dumphdinfo",               &dumphdinfo,               true,   {} },
     { "wallet",             "importelectrumwallet",     &importelectrumwallet,     true,   {"filename", "index"} },
-
-    { "hidden",             "setbip69enabled",          &setbip69enabled,          true,   {} },
+    { "hidden",             "setbip69enabled",          &setbip69enabled,          true,   {} }
 };
 
 void RegisterWalletRPCCommands(CRPCTable &t)
