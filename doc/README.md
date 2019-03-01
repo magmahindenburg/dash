@@ -1,4 +1,4 @@
-Dash Core 0.12.1
+Dash Core 0.13.0
 =====================
 
 This is the official reference wallet for Dash digital currency and comprises the backbone of the Dash peer-to-peer network. You can [download Dash Core](https://www.dash.org/downloads/) or [build it yourself](#building) using the guides below.
@@ -24,7 +24,7 @@ Drag Dash-Qt to your applications folder, and then run Dash-Qt.
 
 ### Need Help?
 
-* See the [Dash documentation](https://dashpay.atlassian.net/wiki/display/DOC)
+* See the [Dash documentation](https://docs.dash.org)
 for help and more information.
 * Ask for help on [Dash Nation Discord](http://dashchat.org)
 * Ask for help on the [Dash Forum](https://dash.org/forum)

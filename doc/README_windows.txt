@@ -1,4 +1,4 @@
-Dash Core 0.12.1
+Dash Core 0.13.0
 =====================
 
 Intro
@@ -18,6 +18,6 @@ However, it downloads and stores the entire history of Dash transactions;
 depending on the speed of your computer and network connection, the synchronization
 process can take anywhere from a few hours to a day or more.
 
-See the dash wiki at:
-  https://dashpay.atlassian.net/wiki/
+See the Dash documentation at:
+  https://docs.dash.org
 for more help and information.
