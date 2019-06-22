@@ -1,10 +1,13 @@
-// Copyright (c) 2017-2018 The Dash Core developers
+// Copyright (c) 2017-2019 The Dash Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "cbtx.h"
 #include "core_io.h"
 #include "deterministicmns.h"
+#include "llmq/quorums.h"
+#include "llmq/quorums_blockprocessor.h"
+#include "llmq/quorums_commitment.h"
 #include "simplifiedmns.h"
 #include "specialtx.h"
 
@@ -33,7 +36,7 @@ uint256 CSimplifiedMNListEntry::CalcHash() const
 
 std::string CSimplifiedMNListEntry::ToString() const
 {
-    return strprintf("CSimplifiedMNListEntry(proRegTxHash=%s, confirmedHash=%s, service=%s, pubKeyOperator=%s, votingAddress=%s, isValie=%d)",
+    return strprintf("CSimplifiedMNListEntry(proRegTxHash=%s, confirmedHash=%s, service=%s, pubKeyOperator=%s, votingAddress=%s, isValid=%d)",
         proRegTxHash.ToString(), confirmedHash.ToString(), service.ToString(false), pubKeyOperator.ToString(), CBitcoinAddress(keyIDVoting).ToString(), isValid);
 }
 
@@ -81,6 +84,50 @@ uint256 CSimplifiedMNList::CalcMerkleRoot(bool* pmutated) const
     return ComputeMerkleRoot(leaves, pmutated);
 }
 
+CSimplifiedMNListDiff::CSimplifiedMNListDiff()
+{
+}
+
+CSimplifiedMNListDiff::~CSimplifiedMNListDiff()
+{
+}
+
+bool CSimplifiedMNListDiff::BuildQuorumsDiff(const CBlockIndex* baseBlockIndex, const CBlockIndex* blockIndex)
+{
+    auto baseQuorums = llmq::quorumBlockProcessor->GetMinedAndActiveCommitmentsUntilBlock(baseBlockIndex);
+    auto quorums = llmq::quorumBlockProcessor->GetMinedAndActiveCommitmentsUntilBlock(blockIndex);
+
+    std::set<std::pair<Consensus::LLMQType, uint256>> baseQuorumHashes;
+    std::set<std::pair<Consensus::LLMQType, uint256>> quorumHashes;
+    for (auto& p : baseQuorums) {
+        for (auto& p2 : p.second) {
+            baseQuorumHashes.emplace(p.first, p2->GetBlockHash());
+        }
+    }
+    for (auto& p : quorums) {
+        for (auto& p2 : p.second) {
+            quorumHashes.emplace(p.first, p2->GetBlockHash());
+        }
+    }
+
+    for (auto& p : baseQuorumHashes) {
+        if (!quorumHashes.count(p)) {
+            deletedQuorums.emplace_back((uint8_t)p.first, p.second);
+        }
+    }
+    for (auto& p : quorumHashes) {
+        if (!baseQuorumHashes.count(p)) {
+            llmq::CFinalCommitment qc;
+            uint256 minedBlockHash;
+            if (!llmq::quorumBlockProcessor->GetMinedCommitment(p.first, p.second, qc, minedBlockHash)) {
+                return false;
+            }
+            newQuorums.emplace_back(qc);
+        }
+    }
+    return true;
+}
+
 void CSimplifiedMNListDiff::ToJson(UniValue& obj) const
 {
     obj.setObject();
@@ -108,9 +155,29 @@ void CSimplifiedMNListDiff::ToJson(UniValue& obj) const
     }
     obj.push_back(Pair("mnList", mnListArr));
 
+    UniValue deletedQuorumsArr(UniValue::VARR);
+    for (const auto& e : deletedQuorums) {
+        UniValue eObj(UniValue::VOBJ);
+        eObj.push_back(Pair("llmqType", e.first));
+        eObj.push_back(Pair("quorumHash", e.second.ToString()));
+        deletedQuorumsArr.push_back(eObj);
+    }
+    obj.push_back(Pair("deletedQuorums", deletedQuorumsArr));
+
+    UniValue newQuorumsArr(UniValue::VARR);
+    for (const auto& e : newQuorums) {
+        UniValue eObj;
+        e.ToJson(eObj);
+        newQuorumsArr.push_back(eObj);
+    }
+    obj.push_back(Pair("newQuorums", newQuorumsArr));
+
     CCbTx cbTxPayload;
     if (GetTxPayload(*cbTx, cbTxPayload)) {
         obj.push_back(Pair("merkleRootMNList", cbTxPayload.merkleRootMNList.ToString()));
+        if (cbTxPayload.nVersion >= 2) {
+            obj.push_back(Pair("merkleRootQuorums", cbTxPayload.merkleRootQuorums.ToString()));
+        }
     }
 }
 
@@ -119,25 +186,27 @@ bool BuildSimplifiedMNListDiff(const uint256& baseBlockHash, const uint256& bloc
     AssertLockHeld(cs_main);
     mnListDiffRet = CSimplifiedMNListDiff();
 
-    BlockMap::iterator baseBlockIt = mapBlockIndex.begin();
+    const CBlockIndex* baseBlockIndex = chainActive.Genesis();
     if (!baseBlockHash.IsNull()) {
-        baseBlockIt = mapBlockIndex.find(baseBlockHash);
+        auto it = mapBlockIndex.find(baseBlockHash);
+        if (it == mapBlockIndex.end()) {
+            errorRet = strprintf("block %s not found", baseBlockHash.ToString());
+            return false;
+        }
+        baseBlockIndex = it->second;
     }
     auto blockIt = mapBlockIndex.find(blockHash);
-    if (baseBlockIt == mapBlockIndex.end()) {
-        errorRet = strprintf("block %s not found", baseBlockHash.ToString());
-        return false;
-    }
     if (blockIt == mapBlockIndex.end()) {
         errorRet = strprintf("block %s not found", blockHash.ToString());
         return false;
     }
+    const CBlockIndex* blockIndex = blockIt->second;
 
-    if (!chainActive.Contains(baseBlockIt->second) || !chainActive.Contains(blockIt->second)) {
+    if (!chainActive.Contains(baseBlockIndex) || !chainActive.Contains(blockIndex)) {
         errorRet = strprintf("block %s and %s are not in the same chain", baseBlockHash.ToString(), blockHash.ToString());
         return false;
     }
-    if (baseBlockIt->second->nHeight > blockIt->second->nHeight) {
+    if (baseBlockIndex->nHeight > blockIndex->nHeight) {
         errorRet = strprintf("base block %s is higher then block %s", baseBlockHash.ToString(), blockHash.ToString());
         return false;
     }
@@ -148,9 +217,14 @@ bool BuildSimplifiedMNListDiff(const uint256& baseBlockHash, const uint256& bloc
     auto dmnList = deterministicMNManager->GetListForBlock(blockHash);
     mnListDiffRet = baseDmnList.BuildSimplifiedDiff(dmnList);
 
+    if (!mnListDiffRet.BuildQuorumsDiff(baseBlockIndex, blockIndex)) {
+        errorRet = strprintf("failed to build quorums diff");
+        return false;
+    }
+
     // TODO store coinbase TX in CBlockIndex
     CBlock block;
-    if (!ReadBlockFromDisk(block, blockIt->second, Params().GetConsensus())) {
+    if (!ReadBlockFromDisk(block, blockIndex, Params().GetConsensus())) {
         errorRet = strprintf("failed to read block %s from disk", blockHash.ToString());
         return false;
     }
