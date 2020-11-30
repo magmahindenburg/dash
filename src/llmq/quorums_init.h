@@ -7,7 +7,6 @@
 
 class CDBWrapper;
 class CEvoDB;
-class CScheduler;
 
 namespace llmq
 {
@@ -16,13 +15,13 @@ namespace llmq
 static const bool DEFAULT_WATCH_QUORUMS = false;
 
 // Init/destroy LLMQ globals
-void InitLLMQSystem(CEvoDB& evoDb, CScheduler* scheduler, bool unitTests, bool fWipe = false);
+void InitLLMQSystem(CEvoDB& evoDb, bool unitTests, bool fWipe = false);
 void DestroyLLMQSystem();
 
 // Manage scheduled tasks, threads, listeners etc.
 void StartLLMQSystem();
 void StopLLMQSystem();
 void InterruptLLMQSystem();
-}
+} // namespace llmq
 
 #endif //DASH_QUORUMS_INIT_H

@@ -76,7 +76,11 @@ In the VirtualBox GUI click "New" and choose the following parameters in the wiz
 
 After creating the VM, we need to configure it.
 
-- Click the `Settings` button, then go to the `Network` tab. Adapter 1 should be attached to `NAT`.
+- Click the `Settings` button, then go to `System` tab and `Processor` sub-tab. Increase the number of processors to the number of cores on your machine if you want builds to be faster.
+
+![](gitian-building/system_settings.png)
+
+- Go to the `Network` tab. Adapter 1 should be attached to `NAT`.
 
 ![](gitian-building/network_settings.png)
 
@@ -131,6 +135,7 @@ To select a different button, press `Tab`.
   - Leave domain name empty.
 
 ![](gitian-building/debian_install_5_configure_the_network.png)
+![](gitian-building/debian_install_6_domain_name.png)
 
 - Choose a root password and enter it twice (remember it for later)
 
@@ -356,7 +361,7 @@ Building Dash Core
 ----------------
 
 To build Dash Core (for Linux, OS X and Windows) just follow the steps under 'perform
-Gitian builds' in [doc/release-process.md](release-process.md#perform-gitian-builds) in the Dash Core repository.
+Gitian builds' in [doc/release-process.md](release-process.md#setup-and-perform-gitian-builds) in the Dash Core repository.
 
 This may take some time as it will build all the dependencies needed for each descriptor.
 These dependencies will be cached after a successful build to avoid rebuilding them when possible.

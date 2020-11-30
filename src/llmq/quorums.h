@@ -5,17 +5,17 @@
 #ifndef DASH_QUORUMS_H
 #define DASH_QUORUMS_H
 
-#include "evo/evodb.h"
-#include "evo/deterministicmns.h"
-#include "llmq/quorums_commitment.h"
+#include <evo/evodb.h>
+#include <evo/deterministicmns.h>
+#include <llmq/quorums_commitment.h>
 
-#include "validationinterface.h"
-#include "consensus/params.h"
-#include "saltedhasher.h"
-#include "unordered_lru_cache.h"
+#include <validationinterface.h>
+#include <consensus/params.h>
+#include <saltedhasher.h>
+#include <unordered_lru_cache.h>
 
-#include "bls/bls.h"
-#include "bls/bls_worker.h"
+#include <bls/bls.h>
+#include <bls/bls_worker.h>
 
 namespace llmq
 {
@@ -37,7 +37,7 @@ class CQuorum
 public:
     const Consensus::LLMQParams& params;
     CFinalCommitment qc;
-    int height;
+    const CBlockIndex* pindexQuorum;
     uint256 minedBlockHash;
     std::vector<CDeterministicMNCPtr> members;
 
@@ -55,7 +55,7 @@ private:
 public:
     CQuorum(const Consensus::LLMQParams& _params, CBLSWorker& _blsWorker) : params(_params), blsCache(_blsWorker), stopCachePopulatorThread(false) {}
     ~CQuorum();
-    void Init(const CFinalCommitment& _qc, int _height, const uint256& _minedBlockHash, const std::vector<CDeterministicMNCPtr>& _members);
+    void Init(const CFinalCommitment& _qc, const CBlockIndex* _pindexQuorum, const uint256& _minedBlockHash, const std::vector<CDeterministicMNCPtr>& _members);
 
     bool IsMember(const uint256& proTxHash) const;
     bool IsValidMember(const uint256& proTxHash) const;
@@ -98,7 +98,6 @@ public:
 
     // all these methods will lock cs_main for a short period of time
     CQuorumCPtr GetQuorum(Consensus::LLMQType llmqType, const uint256& quorumHash);
-    CQuorumCPtr GetNewestQuorum(Consensus::LLMQType llmqType);
     std::vector<CQuorumCPtr> ScanQuorums(Consensus::LLMQType llmqType, size_t maxCount);
 
     // this one is cs_main-free
@@ -116,6 +115,6 @@ private:
 
 extern CQuorumManager* quorumManager;
 
-}
+} // namespace llmq
 
 #endif //DASH_QUORUMS_H

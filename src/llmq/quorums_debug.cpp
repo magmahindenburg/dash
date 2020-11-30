@@ -2,12 +2,13 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "quorums_debug.h"
+#include <llmq/quorums_debug.h>
 
-#include "chainparams.h"
+#include <chainparams.h>
+#include <validation.h>
 
-#include "evo/deterministicmns.h"
-#include "quorums_utils.h"
+#include <evo/deterministicmns.h>
+#include <llmq/quorums_utils.h>
 
 namespace llmq
 {
@@ -23,7 +24,17 @@ UniValue CDKGDebugSessionStatus::ToJson(int detailLevel) const
 
     std::vector<CDeterministicMNCPtr> dmnMembers;
     if (detailLevel == 2) {
-        dmnMembers = CLLMQUtils::GetAllQuorumMembers((Consensus::LLMQType) llmqType, quorumHash);
+        const CBlockIndex* pindex = nullptr;
+        {
+            LOCK(cs_main);
+            auto it = mapBlockIndex.find(quorumHash);
+            if (it != mapBlockIndex.end()) {
+                pindex = it->second;
+            }
+        }
+        if (pindex != nullptr) {
+            dmnMembers = CLLMQUtils::GetAllQuorumMembers((Consensus::LLMQType) llmqType, pindex);
+        }
     }
 
     ret.push_back(Pair("llmqType", llmqType));
@@ -151,7 +162,7 @@ void CDKGDebugManager::InitLocalSessionStatus(Consensus::LLMQType llmqType, cons
 
     auto it = localStatus.sessions.find(llmqType);
     if (it == localStatus.sessions.end()) {
-        it = localStatus.sessions.emplace((uint8_t)llmqType, CDKGDebugSessionStatus()).first;
+        it = localStatus.sessions.emplace(llmqType, CDKGDebugSessionStatus()).first;
     }
 
     auto& params = Params().GetConsensus().llmqs.at(llmqType);
@@ -163,14 +174,6 @@ void CDKGDebugManager::InitLocalSessionStatus(Consensus::LLMQType llmqType, cons
     session.statusBitset = 0;
     session.members.clear();
     session.members.resize((size_t)params.size);
-}
-
-void CDKGDebugManager::UpdateLocalStatus(std::function<bool(CDKGDebugStatus& status)>&& func)
-{
-    LOCK(cs);
-    if (func(localStatus)) {
-        localStatus.nTime = GetAdjustedTime();
-    }
 }
 
 void CDKGDebugManager::UpdateLocalSessionStatus(Consensus::LLMQType llmqType, std::function<bool(CDKGDebugSessionStatus& status)>&& func)
@@ -201,4 +204,4 @@ void CDKGDebugManager::UpdateLocalMemberStatus(Consensus::LLMQType llmqType, siz
     }
 }
 
-}
+} // namespace llmq

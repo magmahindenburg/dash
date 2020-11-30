@@ -2,29 +2,41 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "chainparams.h"
-#include "coins.h"
-#include "consensus/consensus.h"
-#include "consensus/merkle.h"
-#include "consensus/validation.h"
-#include "validation.h"
-#include "masternode-payments.h"
-#include "miner.h"
-#include "policy/policy.h"
-#include "pubkey.h"
-#include "script/standard.h"
-#include "txmempool.h"
-#include "uint256.h"
-#include "util.h"
-#include "utilstrencodings.h"
+#include <chainparams.h>
+#include <coins.h>
+#include <consensus/consensus.h>
+#include <consensus/merkle.h>
+#include <consensus/tx_verify.h>
+#include <consensus/validation.h>
+#include <validation.h>
+#include <masternode/masternode-payments.h>
+#include <miner.h>
+#include <policy/policy.h>
+#include <pubkey.h>
+#include <script/standard.h>
+#include <txmempool.h>
+#include <uint256.h>
+#include <util.h>
+#include <utilstrencodings.h>
 
-#include "test/test_dash.h"
+#include <test/test_dash.h>
 
 #include <memory>
 
 #include <boost/test/unit_test.hpp>
 
 BOOST_FIXTURE_TEST_SUITE(miner_tests, TestingSetup)
+
+// BOOST_CHECK_EXCEPTION predicates to check the specific validation error
+class HasReason {
+public:
+    HasReason(const std::string& reason) : m_reason(reason) {}
+    bool operator() (const std::runtime_error& e) const {
+        return std::string(e.what()).find(m_reason) != std::string::npos;
+    };
+private:
+    const std::string m_reason;
+};
 
 static CFeeRate blockMinFeeRate = CFeeRate(DEFAULT_BLOCK_MIN_TX_FEE);
 
@@ -93,7 +105,7 @@ bool TestSequenceLocks(const CTransaction &tx, int flags)
 void TestPackageSelection(const CChainParams& chainparams, CScript scriptPubKey, std::vector<CTransactionRef>& txFirst)
 {
     // Disable free transactions, otherwise TX selection is non-deterministic
-    SoftSetArg("-blockprioritysize", "0");
+    gArgs.SoftSetArg("-blockprioritysize", "0");
 
     // Test the ancestor feerate transaction selection.
     TestMemPoolEntryHelper entry;
@@ -198,7 +210,8 @@ void TestPackageSelection(const CChainParams& chainparams, CScript scriptPubKey,
 // NOTE: These tests rely on CreateNewBlock doing its own self-validation!
 BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
 {
-    const CChainParams& chainparams = Params(CBaseChainParams::MAIN);
+    const auto chainParams = CreateChainParams(CBaseChainParams::MAIN);
+    const CChainParams& chainparams = *chainParams;
     CScript scriptPubKey = CScript() << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f") << OP_CHECKSIG;
     std::unique_ptr<CBlockTemplate> pblocktemplate, pemptyblocktemplate;
     CMutableTransaction tx,tx2;
@@ -246,7 +259,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
             }
         }
         std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(*pblock);
-        BOOST_CHECK(ProcessNewBlock(chainparams, shared_pblock, true, NULL));
+        BOOST_CHECK(ProcessNewBlock(chainparams, shared_pblock, true, nullptr));
         pblock->hashPrevBlock = pblock->GetHash();
     };
 
@@ -278,12 +291,13 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     {
         tx.vout[0].nValue -= LOWFEE;
         hash = tx.GetHash();
-        bool spendsCoinbase = (i == 0) ? true : false; // only first tx spends coinbase
+        bool spendsCoinbase = i == 0; // only first tx spends coinbase
         // If we don't set the # of sig ops in the CTxMemPoolEntry, template creation fails
         mempool.addUnchecked(hash, entry.Fee(LOWFEE).Time(GetTime()).SpendsCoinbase(spendsCoinbase).FromTx(tx));
         tx.vin[0].prevout.hash = hash;
     }
-    BOOST_CHECK_THROW(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error);
+
+    BOOST_CHECK_EXCEPTION(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error, HasReason("bad-blk-sigops"));
     mempool.clear();
 
     tx.vin[0].prevout.hash = txFirst[0]->GetHash();
@@ -292,7 +306,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     {
         tx.vout[0].nValue -= LOWFEE;
         hash = tx.GetHash();
-        bool spendsCoinbase = (i == 0) ? true : false; // only first tx spends coinbase
+        bool spendsCoinbase = i == 0; // only first tx spends coinbase
         // If we do set the # of sig ops in the CTxMemPoolEntry, template creation passes
         mempool.addUnchecked(hash, entry.Fee(LOWFEE).Time(GetTime()).SpendsCoinbase(spendsCoinbase).SigOps(20).FromTx(tx));
         tx.vin[0].prevout.hash = hash;
@@ -313,7 +327,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     {
         tx.vout[0].nValue -= LOWFEE;
         hash = tx.GetHash();
-        bool spendsCoinbase = (i == 0) ? true : false; // only first tx spends coinbase
+        bool spendsCoinbase = i == 0; // only first tx spends coinbase
         mempool.addUnchecked(hash, entry.Fee(LOWFEE).Time(GetTime()).SpendsCoinbase(spendsCoinbase).FromTx(tx));
         tx.vin[0].prevout.hash = hash;
     }
@@ -323,7 +337,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     // orphan in mempool, template creation fails
     hash = tx.GetHash();
     mempool.addUnchecked(hash, entry.Fee(LOWFEE).Time(GetTime()).FromTx(tx));
-    BOOST_CHECK_THROW(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error);
+    BOOST_CHECK_EXCEPTION(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error, HasReason("bad-txns-inputs-missingorspent"));
     mempool.clear();
 
     // child with higher feerate than parent
@@ -351,7 +365,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     hash = tx.GetHash();
     // give it a fee so it'll get mined
     mempool.addUnchecked(hash, entry.Fee(LOWFEE).Time(GetTime()).SpendsCoinbase(false).FromTx(tx));
-    BOOST_CHECK_THROW(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error);
+    // Should throw bad-cb-multiple
+    BOOST_CHECK_EXCEPTION(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error, HasReason("bad-cb-multiple"));
     mempool.clear();
 
     // invalid (pre-p2sh) txn in mempool, template creation fails
@@ -368,7 +383,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     tx.vout[0].nValue -= LOWFEE;
     hash = tx.GetHash();
     mempool.addUnchecked(hash, entry.Fee(LOWFEE).Time(GetTime()).SpendsCoinbase(false).FromTx(tx));
-    BOOST_CHECK_THROW(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error);
+    // Should throw block-validation-failed
+    BOOST_CHECK_EXCEPTION(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error, HasReason("block-validation-failed"));
     mempool.clear();
 
     // double spend txn pair in mempool, template creation fails
@@ -381,7 +397,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     tx.vout[0].scriptPubKey = CScript() << OP_2;
     hash = tx.GetHash();
     mempool.addUnchecked(hash, entry.Fee(HIGHFEE).Time(GetTime()).SpendsCoinbase(true).FromTx(tx));
-    BOOST_CHECK_THROW(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error);
+    BOOST_CHECK_EXCEPTION(AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey), std::runtime_error, HasReason("bad-txns-inputs-missingorspent"));
     mempool.clear();
 
     // subsidy changing
@@ -390,7 +406,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     // while (chainActive.Tip()->nHeight < 209999) {
     //     CBlockIndex* prev = chainActive.Tip();
     //     CBlockIndex* next = new CBlockIndex();
-    //     next->phashBlock = new uint256(GetRandHash());
+    //     next->phashBlock = new uint256(InsecureRand256());
     //     pcoinsTip->SetBestBlock(next->GetBlockHash());
     //     next->pprev = prev;
     //     next->nHeight = prev->nHeight + 1;
@@ -402,7 +418,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     // while (chainActive.Tip()->nHeight < 210000) {
     //     CBlockIndex* prev = chainActive.Tip();
     //     CBlockIndex* next = new CBlockIndex();
-    //     next->phashBlock = new uint256(GetRandHash());
+    //     next->phashBlock = new uint256(InsecureRand256());
     //     pcoinsTip->SetBestBlock(next->GetBlockHash());
     //     next->pprev = prev;
     //     next->nHeight = prev->nHeight + 1;

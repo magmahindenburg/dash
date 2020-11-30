@@ -1,16 +1,16 @@
-// Copyright (c) 2017-2018 The Dash Core developers
+// Copyright (c) 2017-2019 The Dash Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef DASH_CBTX_H
 #define DASH_CBTX_H
 
-#include "consensus/validation.h"
-#include "primitives/transaction.h"
+#include <consensus/validation.h>
+#include <primitives/transaction.h>
+#include <univalue.h>
 
 class CBlock;
 class CBlockIndex;
-class UniValue;
 
 // coinbase transaction
 class CCbTx
@@ -40,7 +40,18 @@ public:
     }
 
     std::string ToString() const;
-    void ToJson(UniValue& obj) const;
+
+    void ToJson(UniValue& obj) const
+    {
+        obj.clear();
+        obj.setObject();
+        obj.push_back(Pair("version", (int)nVersion));
+        obj.push_back(Pair("height", (int)nHeight));
+        obj.push_back(Pair("merkleRootMNList", merkleRootMNList.ToString()));
+        if (nVersion >= 2) {
+            obj.push_back(Pair("merkleRootQuorums", merkleRootQuorums.ToString()));
+        }
+    }
 };
 
 bool CheckCbTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValidationState& state);

@@ -5,7 +5,7 @@
 #ifndef DASH_BATCHEDLOGGER_H
 #define DASH_BATCHEDLOGGER_H
 
-#include "tinyformat.h"
+#include <tinyformat.h>
 
 class CBatchedLogger
 {
@@ -14,7 +14,7 @@ private:
     std::string header;
     std::string msg;
 public:
-    CBatchedLogger(const std::string& _category, const std::string& _header);
+    CBatchedLogger(uint64_t _category, const std::string& _header);
     virtual ~CBatchedLogger();
 
     template<typename... Args>

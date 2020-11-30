@@ -5,16 +5,15 @@
 #ifndef BITCOIN_DBWRAPPER_H
 #define BITCOIN_DBWRAPPER_H
 
-#include "clientversion.h"
-#include "serialize.h"
-#include "streams.h"
-#include "util.h"
-#include "utilstrencodings.h"
-#include "version.h"
+#include <clientversion.h>
+#include <fs.h>
+#include <serialize.h>
+#include <streams.h>
+#include <util.h>
+#include <utilstrencodings.h>
+#include <version.h>
 
 #include <typeindex>
-
-#include <boost/filesystem/path.hpp>
 
 #include <leveldb/db.h>
 #include <leveldb/write_batch.h>
@@ -25,7 +24,7 @@ static const size_t DBWRAPPER_PREALLOC_VALUE_SIZE = 1024;
 class dbwrapper_error : public std::runtime_error
 {
 public:
-    dbwrapper_error(const std::string& msg) : std::runtime_error(msg) {}
+    explicit dbwrapper_error(const std::string& msg) : std::runtime_error(msg) {}
 };
 
 class CDBWrapper;
@@ -64,7 +63,7 @@ public:
     /**
      * @param[in] parent    CDBWrapper that this batch is to be submitted to
      */
-    CDBBatch(const CDBWrapper &_parent) : parent(_parent), ssKey(SER_DISK, CLIENT_VERSION), ssValue(SER_DISK, CLIENT_VERSION), size_estimate(0) { };
+    explicit CDBBatch(const CDBWrapper &_parent) : parent(_parent), ssKey(SER_DISK, CLIENT_VERSION), ssValue(SER_DISK, CLIENT_VERSION), size_estimate(0) { };
 
     void Clear()
     {
@@ -140,7 +139,7 @@ public:
         parent(_parent), piter(_piter) { };
     ~CDBIterator();
 
-    bool Valid();
+    bool Valid() const;
 
     void SeekToFirst();
 
@@ -199,7 +198,7 @@ class CDBWrapper
 {
     friend const std::vector<unsigned char>& dbwrapper_private::GetObfuscateKey(const CDBWrapper &w);
 private:
-    //! custom environment this database is using (may be NULL in case of default environment)
+    //! custom environment this database is using (may be nullptr in case of default environment)
     leveldb::Env* penv;
 
     //! database options used
@@ -240,7 +239,7 @@ public:
      * @param[in] obfuscate   If true, store data obfuscated via simple XOR. If false, XOR
      *                        with a zero'd byte array.
      */
-    CDBWrapper(const boost::filesystem::path& path, size_t nCacheSize, bool fMemory = false, bool fWipe = false, bool obfuscate = false);
+    CDBWrapper(const fs::path& path, size_t nCacheSize, bool fMemory = false, bool fWipe = false, bool obfuscate = false);
     ~CDBWrapper();
 
     template <typename K>
@@ -391,6 +390,11 @@ public:
         pdb->CompactRange(&slKey1, &slKey2);
     }
 
+    void CompactFull() const
+    {
+        pdb->CompactRange(nullptr, nullptr);
+    }
+
 };
 
 template<typename CDBTransaction>
@@ -411,7 +415,7 @@ private:
     bool curIsParent{false};
 
 public:
-    CDBTransactionIterator(CDBTransaction& _transaction) :
+    explicit CDBTransactionIterator(CDBTransaction& _transaction) :
             transaction(_transaction),
             parentKey(SER_DISK, CLIENT_VERSION)
     {
@@ -551,6 +555,7 @@ class CDBTransaction {
 protected:
     Parent &parent;
     CommitTarget &commitTarget;
+    ssize_t memoryUsage{0}; // signed, just in case we made an error in the calculations so that we don't get an overflow
 
     struct DataStreamCmp {
         static bool less(const CDataStream& a, const CDataStream& b) {
@@ -564,6 +569,8 @@ protected:
     };
 
     struct ValueHolder {
+        size_t memoryUsage;
+        ValueHolder(size_t _memoryUsage) : memoryUsage(_memoryUsage) {}
         virtual ~ValueHolder() = default;
         virtual void Write(const CDataStream& ssKey, CommitTarget &parent) = 0;
     };
@@ -571,7 +578,7 @@ protected:
 
     template <typename V>
     struct ValueHolderImpl : ValueHolder {
-        ValueHolderImpl(const V &_value) : value(_value) { }
+        ValueHolderImpl(const V &_value, size_t _memoryUsage) : ValueHolder(_memoryUsage), value(_value) {}
 
         virtual void Write(const CDataStream& ssKey, CommitTarget &commitTarget) {
             // we're moving the value instead of copying it. This means that Write() can only be called once per
@@ -605,9 +612,18 @@ public:
 
     template <typename V>
     void Write(const CDataStream& ssKey, const V& v) {
-        deletes.erase(ssKey);
+        auto valueMemoryUsage = ::GetSerializeSize(v, SER_DISK, CLIENT_VERSION);
+
+        if (deletes.erase(ssKey)) {
+            memoryUsage -= ssKey.size();
+        }
         auto it = writes.emplace(ssKey, nullptr).first;
-        it->second = std::make_unique<ValueHolderImpl<V>>(v);
+        if (it->second) {
+            memoryUsage -= ssKey.size() + it->second->memoryUsage;
+        }
+        it->second = std::make_unique<ValueHolderImpl<V>>(v, valueMemoryUsage);
+
+        memoryUsage += ssKey.size() + valueMemoryUsage;
     }
 
     template <typename K, typename V>
@@ -657,13 +673,20 @@ public:
     }
 
     void Erase(const CDataStream& ssKey) {
-        writes.erase(ssKey);
-        deletes.emplace(ssKey);
+        auto it = writes.find(ssKey);
+        if (it != writes.end()) {
+            memoryUsage -= ssKey.size() + it->second->memoryUsage;
+            writes.erase(it);
+        }
+        if (deletes.emplace(ssKey).second) {
+            memoryUsage += ssKey.size();
+        }
     }
 
     void Clear() {
         writes.clear();
         deletes.clear();
+        memoryUsage = 0;
     }
 
     void Commit() {
@@ -680,56 +703,24 @@ public:
         return writes.empty() && deletes.empty();
     }
 
+    size_t GetMemoryUsage() const {
+        if (memoryUsage < 0) {
+            // something went wrong when we accounted/calculated used memory...
+            static volatile bool didPrint = false;
+            if (!didPrint) {
+                LogPrintf("CDBTransaction::%s -- negative memoryUsage (%d)", __func__, memoryUsage);
+                didPrint = true;
+            }
+            return 0;
+        }
+        return (size_t)memoryUsage;
+    }
+
     CDBTransactionIterator<CDBTransaction>* NewIterator() {
         return new CDBTransactionIterator<CDBTransaction>(*this);
     }
     std::unique_ptr<CDBTransactionIterator<CDBTransaction>> NewIteratorUniquePtr() {
         return std::make_unique<CDBTransactionIterator<CDBTransaction>>(*this);
-    }
-};
-
-template<typename Parent, typename CommitTarget>
-class CScopedDBTransaction {
-public:
-    typedef CDBTransaction<Parent, CommitTarget> Transaction;
-
-private:
-    Transaction &dbTransaction;
-    std::function<void ()> commitHandler;
-    std::function<void ()> rollbackHandler;
-    bool didCommitOrRollback{};
-
-public:
-    CScopedDBTransaction(Transaction &dbTx) : dbTransaction(dbTx) {}
-    ~CScopedDBTransaction() {
-        if (!didCommitOrRollback)
-            Rollback();
-    }
-    void Commit() {
-        assert(!didCommitOrRollback);
-        didCommitOrRollback = true;
-        dbTransaction.Commit();
-        if (commitHandler)
-            commitHandler();
-    }
-    void Rollback() {
-        assert(!didCommitOrRollback);
-        didCommitOrRollback = true;
-        dbTransaction.Clear();
-        if (rollbackHandler)
-            rollbackHandler();
-    }
-
-    static std::unique_ptr<CScopedDBTransaction<Parent, CommitTarget>> Begin(Transaction &dbTx) {
-        assert(dbTx.IsClean());
-        return std::make_unique<CScopedDBTransaction<Parent, CommitTarget>>(dbTx);
-    }
-
-    void SetCommitHandler(const std::function<void ()> &h) {
-        commitHandler = h;
-    }
-    void SetRollbackHandler(const std::function<void ()> &h) {
-        rollbackHandler = h;
     }
 };
 

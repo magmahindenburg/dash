@@ -4,17 +4,16 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #if defined(HAVE_CONFIG_H)
-#include "config/dash-config.h"
+#include <config/dash-config.h>
 #endif
 
-#include "intro.h"
-#include "ui_intro.h"
+#include <fs.h>
+#include <qt/intro.h>
+#include <qt/forms/ui_intro.h>
 
-#include "guiutil.h"
+#include <qt/guiutil.h>
 
-#include "util.h"
-
-#include <boost/filesystem.hpp>
+#include <util.h>
 
 #include <QFileDialog>
 #include <QSettings>
@@ -24,7 +23,7 @@
 
 static const uint64_t GB_BYTES = 1000000000LL;
 /* Minimum free space (in GB) needed for data directory */
-static const uint64_t BLOCK_CHAIN_SIZE = 10;
+static const uint64_t BLOCK_CHAIN_SIZE = 30;
 /* Minimum free space (in GB) needed for data directory when pruned; Does not include prune target */
 static const uint64_t CHAIN_STATE_SIZE = 1;
 /* Total required space (in GB) depending on user choice (prune, not prune) */
@@ -45,7 +44,7 @@ class FreespaceChecker : public QObject
     Q_OBJECT
 
 public:
-    FreespaceChecker(Intro *intro);
+    explicit FreespaceChecker(Intro *intro);
 
     enum Status {
         ST_OK,
@@ -62,7 +61,7 @@ private:
     Intro *intro;
 };
 
-#include "intro.moc"
+#include <qt/intro.moc>
 
 FreespaceChecker::FreespaceChecker(Intro *_intro)
 {
@@ -71,7 +70,6 @@ FreespaceChecker::FreespaceChecker(Intro *_intro)
 
 void FreespaceChecker::check()
 {
-    namespace fs = boost::filesystem;
     QString dataDirStr = intro->getPathToCheck();
     fs::path dataDir = GUIUtil::qstringToBoostPath(dataDirStr);
     uint64_t freeBytesAvailable = 0;
@@ -134,7 +132,7 @@ Intro::Intro(QWidget *parent) :
     );
     ui->lblExplanation2->setText(ui->lblExplanation2->text().arg(tr(PACKAGE_NAME)));
 
-    uint64_t pruneTarget = std::max<int64_t>(0, GetArg("-prune", 0));
+    uint64_t pruneTarget = std::max<int64_t>(0, gArgs.GetArg("-prune", 0));
     requiredSpace = BLOCK_CHAIN_SIZE;
     QString storageRequiresMsg = tr("At least %1 GB of data will be stored in this directory, and it will grow over time.");
     if (pruneTarget) {
@@ -191,11 +189,10 @@ QString Intro::getDefaultDataDirectory()
 
 bool Intro::pickDataDirectory()
 {
-    namespace fs = boost::filesystem;
     QSettings settings;
     /* If data directory provided on command line, no need to look at settings
        or show a picking dialog */
-    if(!GetArg("-datadir", "").empty())
+    if(!gArgs.GetArg("-datadir", "").empty())
         return true;
     /* 1) Default data directory for operating system */
     QString dataDirDefaultCurrent = getDefaultDataDirectory();
@@ -204,10 +201,12 @@ bool Intro::pickDataDirectory()
     /* 3) Check to see if default datadir is the one we expect */
     QString dataDirDefaultSettings = settings.value("strDataDirDefault").toString();
 
-    if(!fs::exists(GUIUtil::qstringToBoostPath(dataDir)) || GetBoolArg("-choosedatadir", DEFAULT_CHOOSE_DATADIR) || dataDirDefaultCurrent != dataDirDefaultSettings)
+    if(!fs::exists(GUIUtil::qstringToBoostPath(dataDir)) || gArgs.GetBoolArg("-choosedatadir", DEFAULT_CHOOSE_DATADIR) || dataDirDefaultCurrent != dataDirDefaultSettings)
     {
         /* Let the user choose one */
         Intro intro;
+        GUIUtil::disableMacFocusRect(&intro);
+        GUIUtil::loadStyleSheet(&intro);
         intro.setDataDirectory(dataDirDefaultCurrent);
         intro.setWindowIcon(QIcon(":icons/bitcoin"));
 
@@ -220,7 +219,10 @@ bool Intro::pickDataDirectory()
             }
             dataDir = intro.getDataDirectory();
             try {
-                TryCreateDirectory(GUIUtil::qstringToBoostPath(dataDir));
+                if (TryCreateDirectories(GUIUtil::qstringToBoostPath(dataDir))) {
+                    // If a new data directory has been created, make wallets subdirectory too
+                    TryCreateDirectories(GUIUtil::qstringToBoostPath(dataDir) / "wallets");
+                }
                 break;
             } catch (const fs::filesystem_error&) {
                 QMessageBox::critical(0, tr(PACKAGE_NAME),
@@ -237,7 +239,7 @@ bool Intro::pickDataDirectory()
      * (to be consistent with dashd behavior)
      */
     if(dataDir != dataDirDefaultCurrent)
-        SoftSetArg("-datadir", GUIUtil::qstringToBoostPath(dataDir).string()); // use OS locale for path setting
+        gArgs.SoftSetArg("-datadir", GUIUtil::qstringToBoostPath(dataDir).string()); // use OS locale for path setting
     return true;
 }
 
@@ -251,7 +253,7 @@ void Intro::setStatus(int status, const QString &message, quint64 bytesAvailable
         break;
     case FreespaceChecker::ST_ERROR:
         ui->errorMessage->setText(tr("Error") + ": " + message);
-        ui->errorMessage->setStyleSheet("QLabel { color: #800000 }");
+        ui->errorMessage->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
         break;
     }
     /* Indicate number of bytes available */
@@ -263,7 +265,7 @@ void Intro::setStatus(int status, const QString &message, quint64 bytesAvailable
         if(bytesAvailable < requiredSpace * GB_BYTES)
         {
             freeString += " " + tr("(of %1 GB needed)").arg(requiredSpace);
-            ui->freeSpace->setStyleSheet("QLabel { color: #800000 }");
+            ui->freeSpace->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
         } else {
             ui->freeSpace->setStyleSheet("");
         }

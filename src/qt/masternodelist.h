@@ -1,18 +1,17 @@
 #ifndef MASTERNODELIST_H
 #define MASTERNODELIST_H
 
-#include "platformstyle.h"
-#include "primitives/transaction.h"
-#include "sync.h"
-#include "util.h"
+#include <primitives/transaction.h>
+#include <sync.h>
+#include <util.h>
 
-#include "evo/deterministicmns.h"
+#include <evo/deterministicmns.h>
 
 #include <QMenu>
 #include <QTimer>
 #include <QWidget>
 
-#define MASTERNODELIST_UPDATE_SECONDS 15
+#define MASTERNODELIST_UPDATE_SECONDS 3
 #define MASTERNODELIST_FILTER_COOLDOWN_SECONDS 3
 
 namespace Ui
@@ -33,7 +32,7 @@ class MasternodeList : public QWidget
     Q_OBJECT
 
 public:
-    explicit MasternodeList(const PlatformStyle* platformStyle, QWidget* parent = 0);
+    explicit MasternodeList(QWidget* parent = 0);
     ~MasternodeList();
 
     void setClientModel(ClientModel* clientModel);
@@ -42,6 +41,7 @@ public:
 private:
     QMenu* contextMenuDIP3;
     int64_t nTimeFilterUpdatedDIP3;
+    int64_t nTimeUpdatedDIP3;
     bool fFilterUpdatedDIP3;
 
     QTimer* timer;
@@ -54,9 +54,11 @@ private:
 
     QString strCurrentFilterDIP3;
 
+    bool mnListChanged;
+
     CDeterministicMNCPtr GetSelectedDIP3MN();
 
-    void updateDIP3List(bool fForce);
+    void updateDIP3List();
 
 Q_SIGNALS:
     void doubleClicked(const QModelIndex&);
@@ -70,7 +72,7 @@ private Q_SLOTS:
     void copyProTxHash_clicked();
     void copyCollateralOutpoint_clicked();
 
+    void handleMasternodeListChanged();
     void updateDIP3ListScheduled();
-    void updateDIP3ListForced();
 };
 #endif // MASTERNODELIST_H

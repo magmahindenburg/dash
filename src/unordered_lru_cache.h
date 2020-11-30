@@ -1,4 +1,4 @@
-// Copyright (c) 2019 The Dash Core developers
+// Copyright (c) 2019-2020 The Dash Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -19,7 +19,7 @@ private:
     int64_t accessCounter{0};
 
 public:
-    unordered_lru_cache(size_t _maxSize = MaxSize, size_t _truncateThreshold = TruncateThreshold) :
+    explicit unordered_lru_cache(size_t _maxSize = MaxSize, size_t _truncateThreshold = TruncateThreshold) :
         maxSize(_maxSize),
         truncateThreshold(_truncateThreshold == 0 ? _maxSize * 2 : _truncateThreshold)
     {

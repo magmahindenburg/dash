@@ -1,10 +1,10 @@
-// Copyright (c) 2014-2018 The Dash Core developers
+// Copyright (c) 2014-2019 The Dash Core developers
 // Distributed under the MIT software license, see the accompanying
 #ifndef DASH_HDCHAIN_H
 #define DASH_HDCHAIN_H
 
-#include "key.h"
-#include "sync.h"
+#include <key.h>
+#include <sync.h>
 
 /* hd account data model */
 class CHDAccount

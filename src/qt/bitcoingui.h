@@ -6,10 +6,10 @@
 #define BITCOIN_QT_BITCOINGUI_H
 
 #if defined(HAVE_CONFIG_H)
-#include "config/dash-config.h"
+#include <config/dash-config.h>
 #endif
 
-#include "amount.h"
+#include <amount.h>
 
 #include <QLabel>
 #include <QMainWindow>
@@ -19,11 +19,14 @@
 #include <QPushButton>
 #include <QSystemTrayIcon>
 
+#ifdef Q_OS_MAC
+#include <qt/macos_appnap.h>
+#endif
+
 class ClientModel;
 class NetworkStyle;
 class Notificator;
 class OptionsModel;
-class PlatformStyle;
 class RPCConsole;
 class SendCoinsRecipient;
 class UnitDisplayStatusBarControl;
@@ -32,12 +35,11 @@ class WalletModel;
 class HelpMessageDialog;
 class ModalOverlay;
 
-class CWallet;
-
 QT_BEGIN_NAMESPACE
 class QAction;
 class QProgressBar;
 class QProgressDialog;
+class QToolButton;
 QT_END_NAMESPACE
 
 /**
@@ -52,7 +54,7 @@ public:
     static const QString DEFAULT_WALLET;
     static const std::string DEFAULT_UIPLATFORM;
 
-    explicit BitcoinGUI(const PlatformStyle *platformStyle, const NetworkStyle *networkStyle, QWidget *parent = 0);
+    explicit BitcoinGUI(const NetworkStyle* networkStyle, QWidget* parent = 0);
     ~BitcoinGUI();
 
     /** Set the client model.
@@ -67,6 +69,9 @@ public:
     */
     bool addWallet(const QString& name, WalletModel *walletModel);
     bool setCurrentWallet(const QString& name);
+    /** Set the UI status indicators based on the currently selected wallet.
+    */
+    void updateWalletStatus();
     void removeAllWallets();
 #endif // ENABLE_WALLET
     bool enableWallet;
@@ -93,18 +98,20 @@ private:
     QProgressDialog *progressDialog;
 
     QMenuBar *appMenuBar;
-    QAction *overviewAction;
-    QAction *historyAction;
-    QAction *masternodeAction;
+    QToolButton *overviewAction;
+    QToolButton *historyAction;
+    QToolButton *masternodeAction;
     QAction *quitAction;
-    QAction *sendCoinsAction;
+    QToolButton *sendCoinsAction;
     QAction *sendCoinsMenuAction;
+    QToolButton *privateSendCoinsAction;
+    QAction *privateSendCoinsMenuAction;
     QAction *usedSendingAddressesAction;
     QAction *usedReceivingAddressesAction;
     QAction *signMessageAction;
     QAction *verifyMessageAction;
     QAction *aboutAction;
-    QAction *receiveCoinsAction;
+    QToolButton *receiveCoinsAction;
     QAction *receiveCoinsMenuAction;
     QAction *optionsAction;
     QAction *toggleHideAction;
@@ -132,12 +139,36 @@ private:
     RPCConsole *rpcConsole;
     HelpMessageDialog *helpMessageDialog;
     ModalOverlay *modalOverlay;
+    QButtonGroup *tabGroup;
 
-    /** Keep track of previous number of blocks, to detect progress */
-    int prevBlocks;
-    int spinnerFrame;
+#ifdef Q_OS_MAC
+    CAppNapInhibitor* m_app_nap_inhibitor = nullptr;
+#endif
 
-    const PlatformStyle *platformStyle;
+    /** Timer to update the spinner animation in the status bar periodically */
+    QTimer* timerSpinner;
+    /** Start the spinner animation in the status bar if it's not running and if labelBlocksIcon is visible. */
+    void startSpinner();
+    /** Stop the spinner animation in the status bar */
+    void stopSpinner();
+
+    /** Timer to update the connection icon during connecting phase */
+    QTimer* timerConnecting;
+    /** Start the connecting animation */
+    void startConnectingAnimation();
+    /** Stop the connecting animation */
+    void stopConnectingAnimation();
+
+    struct IncomingTransactionMessage {
+        QString date;
+        int unit;
+        CAmount amount;
+        QString type;
+        QString address;
+        QString label;
+    };
+    std::list<IncomingTransactionMessage> incomingTransactions;
+    QTimer* incomingTransactionsTimer;
 
     /** Create the main UI actions. */
     void createActions();
@@ -163,6 +194,10 @@ private:
 
     void updateHeadersSyncProgressLabel();
 
+    void updateProgressBarVisibility();
+
+    void updateToolBarShortcuts();
+
 Q_SIGNALS:
     /** Signal raised when a URI was entered or dragged to the GUI */
     void receivedURI(const QString &uri);
@@ -177,7 +212,7 @@ public Q_SLOTS:
     /** Get restart command-line parameters and request restart */
     void handleRestart(QStringList args);
     /** Set number of blocks and last block date shown in the UI */
-    void setNumBlocks(int count, const QDateTime& blockDate, double nVerificationProgress, bool headers);
+    void setNumBlocks(int count, const QDateTime& blockDate, const QString& blockHash, double nVerificationProgress, bool headers);
     /** Set additional data sync status shown in the UI */
     void setAdditionalDataSyncProgress(double nSyncProgress);
 
@@ -188,7 +223,7 @@ public Q_SLOTS:
                             @see CClientUIInterface::MessageBoxFlags
        @param[in] ret       pointer to a bool that will be modified to whether Ok was clicked (modal only)
     */
-    void message(const QString &title, const QString &message, unsigned int style, bool *ret = NULL);
+    void message(const QString &title, const QString &message, unsigned int style, bool *ret = nullptr);
 
 #ifdef ENABLE_WALLET
     /** Set the hd-enabled status as shown in the UI.
@@ -207,6 +242,7 @@ public Q_SLOTS:
 
     /** Show incoming transaction notification for new transactions. */
     void incomingTransaction(const QString& date, int unit, const CAmount& amount, const QString& type, const QString& address, const QString& label);
+    void showIncomingTransactions();
 #endif // ENABLE_WALLET
 
 private Q_SLOTS:
@@ -221,6 +257,8 @@ private Q_SLOTS:
     void gotoReceiveCoinsPage();
     /** Switch to send coins page */
     void gotoSendCoinsPage(QString addr = "");
+    /** Switch to PrivateSend coins page */
+    void gotoPrivateSendCoinsPage(QString addr = "");
 
     /** Show Sign/Verify Message dialog and switch to sign message tab */
     void gotoSignMessageTab(QString addr = "");
@@ -229,6 +267,9 @@ private Q_SLOTS:
 
     /** Show open dialog */
     void openClicked();
+
+    /** Highlight checked tab button */
+    void highlightTabButton(QAbstractButton *button, bool checked);
 #endif // ENABLE_WALLET
     /** Show configuration dialog */
     void optionsClicked();
@@ -256,6 +297,9 @@ private Q_SLOTS:
 #ifndef Q_OS_MAC
     /** Handle tray icon clicked */
     void trayIconActivated(QSystemTrayIcon::ActivationReason reason);
+#else
+    /** Handle macOS Dock icon clicked */
+    void macosDockIconActivated();
 #endif
 
     /** Show window if hidden, unminimize when minimized, rise when obscured or show if hidden and fToggleHidden is true */
@@ -276,6 +320,10 @@ private Q_SLOTS:
     void toggleNetworkActive();
 
     void showModalOverlay();
+
+    void updatePrivateSendVisibility();
+
+    void updateWidth();
 };
 
 class UnitDisplayStatusBarControl : public QLabel
@@ -283,7 +331,7 @@ class UnitDisplayStatusBarControl : public QLabel
     Q_OBJECT
 
 public:
-    explicit UnitDisplayStatusBarControl(const PlatformStyle *platformStyle);
+    explicit UnitDisplayStatusBarControl();
     /** Lets the control know about the Options Model (and its signals) */
     void setOptionsModel(OptionsModel *optionsModel);
 
